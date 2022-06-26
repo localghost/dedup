@@ -1,11 +1,14 @@
+use anyhow::{ensure, Result};
+use clap::Parser;
+//use dialoguer::Confirm;
 use num_cpus;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
-use std::fs;
 use std::fs::File;
 use std::io;
+use std::path::PathBuf;
 use walkdir::WalkDir;
 
 fn hash(path: &str) -> String {
@@ -15,12 +18,37 @@ fn hash(path: &str) -> String {
     io::copy(&mut f, &mut hasher).unwrap();
     hex::encode(hasher.finalize())
 }
+#[derive(Parser)]
+struct Args {
+    #[clap(help = "Directory to search for duplicates in")]
+    dir: PathBuf,
 
-fn main() -> std::io::Result<()> {
+    #[clap(
+        long,
+        value_parser,
+        requires = "dump-file",
+        help = "Only dump duplicates"
+    )]
+    dump_only: bool,
+
+    #[clap(long, value_parser, help = "Dump duplicates to a JSON file")]
+    dump_file: Option<PathBuf>,
+
+    #[clap(
+        long,
+        value_parser,
+        help = "In place of removed files make symblic links to the one that's left"
+    )]
+    make_symlinks: bool,
+}
+
+fn scan_directory(path: PathBuf) -> HashMap<String, Vec<String>> {
     let cpus = num_cpus::get();
-    let pool = ThreadPoolBuilder::new().num_threads(cpus).build();
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(std::cmp::max(cpus / 2, 1))
+        .build();
     let results = pool.unwrap().scope(|_scope| {
-        WalkDir::new("/home/kostrzewa/Downloads")
+        WalkDir::new(path)
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_file())
@@ -42,6 +70,48 @@ fn main() -> std::io::Result<()> {
             .or_insert(Vec::<String>::new())
             .push(path);
     }
-    println!("{:?}", merged);
+    merged
+}
+
+fn remove_duplicates<'a>(duplicates: impl Iterator<Item = &'a Vec<String>>, make_symlinks: bool) {
+    for paths in duplicates {
+        if paths.len() > 1 {
+            let original = &paths[0];
+            for path in &paths[1..] {
+                std::fs::remove_file(path).unwrap();
+                if make_symlinks {
+                    println!("Replacing {} with link to {}", path, original);
+                    std::os::unix::fs::symlink(original, path).unwrap();
+                }
+            }
+        }
+    }
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+    ensure!(args.dir.exists(), "Path {:?} does not exist", args.dir);
+    ensure!(args.dir.is_dir(), "Path {:?} is not a directory", args.dir);
+
+    let results = scan_directory(args.dir);
+    println!("{:?}", results);
+
+    if let Some(dump_file) = args.dump_file {
+        std::fs::write(dump_file, serde_json::to_string_pretty(&results).unwrap())?;
+    }
+
+    if !args.dump_only {
+        remove_duplicates(results.values(), args.make_symlinks);
+    }
+    //    for (hash, paths) in merged {
+    //        if paths.len() > 1 {
+    //            println!("{} -> {:?}", hash, paths);
+    //            for path in paths {
+    //                if Confirm::new().with_prompt(format!("Remove {}?", path)).default(false).interact().unwrap() {
+    //                    std::fs::remove_file(path).unwrap();
+    //                }
+    //            }
+    //        }
+    //    }
     Ok(())
 }
