@@ -10,11 +10,11 @@ use std::io;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
-fn hash(path: &str) -> String {
-    let mut f = File::open(path).unwrap();
+fn hash(path: &str) -> Result<String> {
+    let mut f = File::open(path)?;
     let mut hasher = Sha1::new();
-    io::copy(&mut f, &mut hasher).unwrap();
-    hex::encode(hasher.finalize())
+    io::copy(&mut f, &mut hasher)?;
+    Ok(hex::encode(hasher.finalize()))
 }
 
 #[derive(Parser)]
@@ -41,50 +41,51 @@ struct Args {
     make_symlinks: bool,
 }
 
-fn scan_directory(path: PathBuf) -> HashMap<String, Vec<String>> {
+fn scan_directory(path: PathBuf) -> Result<HashMap<String, Vec<String>>> {
     let cpus = num_cpus::get();
     let pool = ThreadPoolBuilder::new()
         .num_threads(std::cmp::max(cpus / 2, 1))
-        .build();
-    let results = pool.unwrap().scope(|_scope| {
+        .build()?;
+    let results = pool.scope(|_scope| {
         WalkDir::new(path)
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_file())
             .collect::<Vec<_>>()
             .par_iter()
-            .map(|entry| {
-                (
-                    hash(entry.path().to_str().unwrap()),
-                    entry.path().to_str().unwrap().to_string(),
-                )
+            .map(|entry| -> Option<(_, _)> {
+                Some((
+                    hash(entry.path().to_str()?).ok()?,
+                    entry.path().to_str()?.to_string(),
+                ))
             })
             .collect::<Vec<_>>()
     });
     println!("Merging partial results");
     let mut merged = HashMap::new();
-    for (hash, path) in results {
+    for (hash, path) in results.into_iter().filter_map(|e| e) {
         merged
             .entry(hash)
             .or_insert(Vec::<String>::new())
             .push(path);
     }
-    merged
+    Ok(merged)
 }
 
-fn remove_duplicates<'a>(duplicates: impl Iterator<Item = &'a Vec<String>>, make_symlinks: bool) {
+fn remove_duplicates<'a>(duplicates: impl Iterator<Item = &'a Vec<String>>, make_symlinks: bool) -> Result<()> {
     for paths in duplicates {
         if paths.len() > 1 {
             let original = &paths[0];
             for path in &paths[1..] {
-                std::fs::remove_file(path).unwrap();
+                std::fs::remove_file(path)?;
                 if make_symlinks {
                     println!("Replacing {} with link to {}", path, original);
-                    std::os::unix::fs::symlink(original, path).unwrap();
+                    std::os::unix::fs::symlink(original, path)?;
                 }
             }
         }
     }
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -92,14 +93,14 @@ fn main() -> Result<()> {
     ensure!(args.dir.exists(), "Path {:?} does not exist", args.dir);
     ensure!(args.dir.is_dir(), "Path {:?} is not a directory", args.dir);
 
-    let results = scan_directory(args.dir);
+    let results = scan_directory(args.dir)?;
 
     if let Some(dump_file) = args.dump_file {
-        std::fs::write(dump_file, serde_json::to_string_pretty(&results).unwrap())?;
+        std::fs::write(dump_file, serde_json::to_string_pretty(&results)?)?;
     }
 
     if !args.dump_only {
-        remove_duplicates(results.values(), args.make_symlinks);
+        remove_duplicates(results.values(), args.make_symlinks)?;
     }
 
     Ok(())
