@@ -1,6 +1,5 @@
 use anyhow::{ensure, Result};
 use clap::Parser;
-//use dialoguer::Confirm;
 use num_cpus;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
@@ -18,6 +17,7 @@ fn hash(path: &str) -> String {
     io::copy(&mut f, &mut hasher).unwrap();
     hex::encode(hasher.finalize())
 }
+
 #[derive(Parser)]
 struct Args {
     #[clap(help = "Directory to search for duplicates in")]
@@ -103,15 +103,6 @@ fn main() -> Result<()> {
     if !args.dump_only {
         remove_duplicates(results.values(), args.make_symlinks);
     }
-    //    for (hash, paths) in merged {
-    //        if paths.len() > 1 {
-    //            println!("{} -> {:?}", hash, paths);
-    //            for path in paths {
-    //                if Confirm::new().with_prompt(format!("Remove {}?", path)).default(false).interact().unwrap() {
-    //                    std::fs::remove_file(path).unwrap();
-    //                }
-    //            }
-    //        }
-    //    }
+
     Ok(())
 }
