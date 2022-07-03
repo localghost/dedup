@@ -10,13 +10,6 @@ use std::io;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
-fn hash(path: &str) -> Result<String> {
-    let mut f = File::open(path)?;
-    let mut hasher = Sha1::new();
-    io::copy(&mut f, &mut hasher)?;
-    Ok(hex::encode(hasher.finalize()))
-}
-
 #[derive(Parser)]
 struct Args {
     #[clap(help = "Directory to search for duplicates in")]
@@ -39,6 +32,14 @@ struct Args {
         help = "In place of removed files make symblic links to the one that's left"
     )]
     make_symlinks: bool,
+}
+
+fn hash(path: &str) -> Result<String> {
+    println!("Checking {}", path);
+    let mut f = File::open(path)?;
+    let mut hasher = Sha1::new();
+    io::copy(&mut f, &mut hasher)?;
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn scan_directory(path: PathBuf) -> Result<HashMap<String, Vec<String>>> {
