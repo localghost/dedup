@@ -31,7 +31,7 @@ struct Args {
         value_parser,
         help = "In place of removed files make symblic links to the one that's left"
     )]
-    make_symlinks: bool,
+    no_symlinks: bool,
 }
 
 fn hash(path: &str) -> Result<String> {
@@ -101,7 +101,7 @@ fn main() -> Result<()> {
     }
 
     if !args.dump_only {
-        remove_duplicates(results.values(), args.make_symlinks)?;
+        remove_duplicates(results.values(), !args.no_symlinks)?;
     }
 
     Ok(())
