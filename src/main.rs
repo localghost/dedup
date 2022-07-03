@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use walkdir::WalkDir;
 
 fn hash(path: &str) -> String {
-    println!("Hashing {} on {:?}...", path, rayon::current_thread_index());
     let mut f = File::open(path).unwrap();
     let mut hasher = Sha1::new();
     io::copy(&mut f, &mut hasher).unwrap();
@@ -62,7 +61,7 @@ fn scan_directory(path: PathBuf) -> HashMap<String, Vec<String>> {
             })
             .collect::<Vec<_>>()
     });
-    println!("Merging...");
+    println!("Merging partial results");
     let mut merged = HashMap::new();
     for (hash, path) in results {
         merged
@@ -94,7 +93,6 @@ fn main() -> Result<()> {
     ensure!(args.dir.is_dir(), "Path {:?} is not a directory", args.dir);
 
     let results = scan_directory(args.dir);
-    println!("{:?}", results);
 
     if let Some(dump_file) = args.dump_file {
         std::fs::write(dump_file, serde_json::to_string_pretty(&results).unwrap())?;
